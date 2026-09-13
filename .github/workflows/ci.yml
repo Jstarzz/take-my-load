@@ -32,3 +32,11 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f deploy/docker/Dockerfile --build-arg SERVICE=controller -t take-my-load-controller:test .
+      - run: docker build -f deploy/docker/Dockerfile --build-arg SERVICE=worker -t take-my-load-worker:test .
+      - run: docker compose config --quiet

@@ -10,23 +10,27 @@ import (
 )
 
 type Server struct {
-	registry *Registry
+	registry WorkerRepository
 	planner  *Planner
-	jobs     *JobStore
+	jobs     JobRepository
 	version  string
 	mux      *http.ServeMux
 }
 
-func NewServer(registry *Registry, version string) *Server {
+func NewServer(registry WorkerRepository, version string) *Server {
 	policy, _ := ParseTargetPolicy("")
 	return NewServerWithPolicy(registry, version, policy)
 }
 
-func NewServerWithPolicy(registry *Registry, version string, policy *TargetPolicy) *Server {
+func NewServerWithPolicy(registry WorkerRepository, version string, policy *TargetPolicy) *Server {
+	return NewServerWithRepositories(registry, NewJobStore(), version, policy)
+}
+
+func NewServerWithRepositories(registry WorkerRepository, jobs JobRepository, version string, policy *TargetPolicy) *Server {
 	s := &Server{
 		registry: registry,
 		planner:  NewPlanner(registry, policy),
-		jobs:     NewJobStore(),
+		jobs:     jobs,
 		version:  version,
 		mux:      http.NewServeMux(),
 	}
@@ -61,7 +65,12 @@ func (s *Server) handleInfo(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleWorkers(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.registry.List())
+	workers, err := s.registry.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list workers")
+		return
+	}
+	writeJSON(w, http.StatusOK, workers)
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +87,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "at least one engine is required")
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.registry.Register(reg))
+	worker, err := s.registry.Register(reg)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to register worker")
+		return
+	}
+	writeJSON(w, http.StatusCreated, worker)
 }
 
 func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
@@ -101,11 +115,21 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAssignments(w http.ResponseWriter, r *http.Request) {
 	workerID := r.PathValue("id")
-	if _, ok := s.registry.Get(workerID); !ok {
+	_, ok, err := s.registry.Get(workerID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read worker")
+		return
+	}
+	if !ok {
 		writeError(w, http.StatusNotFound, ErrWorkerNotFound.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, s.jobs.Assignments(workerID))
+	assignments, err := s.jobs.Assignments(workerID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list assignments")
+		return
+	}
+	writeJSON(w, http.StatusOK, assignments)
 }
 
 func (s *Server) handleAssignmentAction(w http.ResponseWriter, r *http.Request) {
@@ -144,7 +168,12 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "engine query parameter is required")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.planner.Capacity(engine))
+	capacity, err := s.planner.Capacity(engine)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to calculate capacity")
+		return
+	}
+	writeJSON(w, http.StatusOK, capacity)
 }
 
 func (s *Server) handlePlanTest(w http.ResponseWriter, r *http.Request) {

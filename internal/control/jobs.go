@@ -92,7 +92,7 @@ func (s *JobStore) Get(id string) (protocol.TestJob, error) {
 	return cloneJob(*job), nil
 }
 
-func (s *JobStore) Assignments(workerID string) []protocol.WorkerAssignment {
+func (s *JobStore) Assignments(workerID string) ([]protocol.WorkerAssignment, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := make([]protocol.WorkerAssignment, 0)
@@ -104,7 +104,7 @@ func (s *JobStore) Assignments(workerID string) []protocol.WorkerAssignment {
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
-	return result
+	return result, nil
 }
 
 func (s *JobStore) Cancel(id string) (protocol.TestJob, error) {

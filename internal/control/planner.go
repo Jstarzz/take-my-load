@@ -27,13 +27,13 @@ func (e *CapacityError) Error() string {
 func (e *CapacityError) Unwrap() error { return ErrInsufficientCapacity }
 
 type Planner struct {
-	registry  *Registry
+	registry  WorkerRepository
 	policy    *TargetPolicy
 	scheduler Scheduler
 	now       func() time.Time
 }
 
-func NewPlanner(registry *Registry, policy *TargetPolicy) *Planner {
+func NewPlanner(registry WorkerRepository, policy *TargetPolicy) *Planner {
 	return &Planner{
 		registry: registry,
 		policy:   policy,
@@ -41,8 +41,12 @@ func NewPlanner(registry *Registry, policy *TargetPolicy) *Planner {
 	}
 }
 
-func (p *Planner) Capacity(engine string) protocol.CapacityResponse {
-	return p.scheduler.Capacity(p.registry.List(), strings.TrimSpace(engine))
+func (p *Planner) Capacity(engine string) (protocol.CapacityResponse, error) {
+	workers, err := p.registry.List()
+	if err != nil {
+		return protocol.CapacityResponse{}, fmt.Errorf("list workers: %w", err)
+	}
+	return p.scheduler.Capacity(workers, strings.TrimSpace(engine)), nil
 }
 
 func (p *Planner) Plan(req protocol.TestPlanRequest) (protocol.TestPlan, error) {
@@ -62,7 +66,11 @@ func (p *Planner) Plan(req protocol.TestPlanRequest) (protocol.TestPlan, error) 
 		return protocol.TestPlan{}, err
 	}
 
-	shards, capacity, err := p.scheduler.Shard(p.registry.List(), req.Engine, req.RequestsPerSecond)
+	workers, err := p.registry.List()
+	if err != nil {
+		return protocol.TestPlan{}, fmt.Errorf("list workers: %w", err)
+	}
+	shards, capacity, err := p.scheduler.Shard(workers, req.Engine, req.RequestsPerSecond)
 	if errors.Is(err, ErrInsufficientCapacity) {
 		return protocol.TestPlan{}, &CapacityError{AvailableRPS: capacity}
 	}

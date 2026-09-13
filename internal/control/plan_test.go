@@ -12,8 +12,8 @@ import (
 
 func TestPlanTestBuildsAuthorizedCapacityAwarePlan(t *testing.T) {
 	registry := NewRegistry()
-	registry.Register(protocol.WorkerRegistration{ID: "a", Name: "A", CapacityRPS: 80_000, Engines: []string{"blast"}})
-	registry.Register(protocol.WorkerRegistration{ID: "b", Name: "B", CapacityRPS: 70_000, Engines: []string{"blast"}})
+	mustRegister(t, registry, protocol.WorkerRegistration{ID: "a", Name: "A", CapacityRPS: 80_000, Engines: []string{"blast"}})
+	mustRegister(t, registry, protocol.WorkerRegistration{ID: "b", Name: "B", CapacityRPS: 70_000, Engines: []string{"blast"}})
 	policy, err := ParseTargetPolicy("10.250.0.0/24")
 	if err != nil {
 		t.Fatalf("ParseTargetPolicy() error = %v", err)
@@ -46,7 +46,7 @@ func TestPlanTestBuildsAuthorizedCapacityAwarePlan(t *testing.T) {
 
 func TestPlanTestRejectsUnauthorizedTarget(t *testing.T) {
 	registry := NewRegistry()
-	registry.Register(protocol.WorkerRegistration{ID: "a", Name: "A", CapacityRPS: 100_000, Engines: []string{"blast"}})
+	mustRegister(t, registry, protocol.WorkerRegistration{ID: "a", Name: "A", CapacityRPS: 100_000, Engines: []string{"blast"}})
 	policy, _ := ParseTargetPolicy("10.250.0.0/24")
 	server := NewServerWithPolicy(registry, "test", policy)
 
@@ -61,7 +61,7 @@ func TestPlanTestRejectsUnauthorizedTarget(t *testing.T) {
 
 func TestPlanTestRejectsMoreThanAggregateCapacity(t *testing.T) {
 	registry := NewRegistry()
-	registry.Register(protocol.WorkerRegistration{ID: "a", Name: "A", CapacityRPS: 10_000, Engines: []string{"blast"}})
+	mustRegister(t, registry, protocol.WorkerRegistration{ID: "a", Name: "A", CapacityRPS: 10_000, Engines: []string{"blast"}})
 	policy, _ := ParseTargetPolicy("10.250.0.0/24")
 	server := NewServerWithPolicy(registry, "test", policy)
 
@@ -71,5 +71,12 @@ func TestPlanTestRejectsMoreThanAggregateCapacity(t *testing.T) {
 	server.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d: %s", res.Code, http.StatusConflict, res.Body.String())
+	}
+}
+
+func mustRegister(t *testing.T, registry *Registry, registration protocol.WorkerRegistration) {
+	t.Helper()
+	if _, err := registry.Register(registration); err != nil {
+		t.Fatalf("Register() error = %v", err)
 	}
 }

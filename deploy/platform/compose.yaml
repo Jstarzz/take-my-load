@@ -1,4 +1,11 @@
 services:
+  controller:
+    environment:
+      TML_DATABASE_URL: postgres://tml:${POSTGRES_PASSWORD:-tml-dev-only}@pgbouncer:6432/tml?sslmode=disable
+    depends_on:
+      pgbouncer:
+        condition: service_started
+
   postgres-primary:
     image: postgres:18.6-alpine
     environment:

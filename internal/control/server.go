@@ -34,10 +34,10 @@ func NewServer(registry *Registry, version string) *Server {
 func NewServerWithPolicy(registry *Registry, version string, policy *TargetPolicy) *Server {
 	s := &Server{
 		registry: registry,
-		policy: policy,
-		version: version,
-		mux: http.NewServeMux(),
-		now: time.Now,
+		policy:   policy,
+		version:  version,
+		mux:      http.NewServeMux(),
+		now:      time.Now,
 	}
 	s.routes()
 	return s

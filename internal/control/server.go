@@ -48,6 +48,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/workers/register", s.handleRegister)
 	s.mux.HandleFunc("POST /api/v1/workers/{id}/heartbeat", s.handleHeartbeat)
 	s.mux.HandleFunc("GET /api/v1/workers/{id}/assignments", s.handleAssignments)
+	s.mux.HandleFunc("POST /api/v1/workers/{worker_id}/assignments/{assignment_id}/result", s.handleAssignmentResult)
 	s.mux.HandleFunc("POST /api/v1/workers/{worker_id}/assignments/{assignment_id}/{action}", s.handleAssignmentAction)
 	s.mux.HandleFunc("GET /api/v1/capacity", s.handleCapacity)
 	s.mux.HandleFunc("POST /api/v1/tests/plan", s.handlePlanTest)
@@ -145,6 +146,20 @@ func (s *Server) handleAssignmentAction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	job, err := s.jobs.TransitionAssignment(r.PathValue("worker_id"), r.PathValue("assignment_id"), next)
+	writeAssignmentMutation(w, job, err)
+}
+
+func (s *Server) handleAssignmentResult(w http.ResponseWriter, r *http.Request) {
+	var result protocol.ExecutionSummary
+	if err := decodeJSON(r, &result); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid execution result")
+		return
+	}
+	job, err := s.jobs.CompleteAssignment(r.PathValue("worker_id"), r.PathValue("assignment_id"), result)
+	writeAssignmentMutation(w, job, err)
+}
+
+func writeAssignmentMutation(w http.ResponseWriter, job protocol.TestJob, err error) {
 	switch {
 	case errors.Is(err, ErrAssignmentNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -152,11 +167,14 @@ func (s *Server) handleAssignmentAction(w http.ResponseWriter, r *http.Request) 
 	case errors.Is(err, ErrAssignmentOwner):
 		writeError(w, http.StatusForbidden, err.Error())
 		return
+	case errors.Is(err, ErrInvalidResult):
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	case errors.Is(err, ErrInvalidTransition), errors.Is(err, ErrStartTimeNotReached):
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	case err != nil:
-		writeError(w, http.StatusInternalServerError, "assignment transition failed")
+		writeError(w, http.StatusInternalServerError, "assignment mutation failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, job)

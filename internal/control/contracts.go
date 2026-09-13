@@ -3,16 +3,16 @@ package control
 import "github.com/Jstarzz/take-my-load/internal/protocol"
 
 type WorkerRepository interface {
-	Register(protocol.WorkerRegistration) (protocol.WorkerSnapshot, error)
-	Heartbeat(string, protocol.WorkerHeartbeat) (protocol.WorkerSnapshot, error)
-	Get(string) (protocol.WorkerSnapshot, bool, error)
-	List() ([]protocol.WorkerSnapshot, error)
+	RegisterWorker(protocol.WorkerRegistration) (protocol.WorkerSnapshot, error)
+	HeartbeatWorker(string, protocol.WorkerHeartbeat) (protocol.WorkerSnapshot, error)
+	GetWorker(string) (protocol.WorkerSnapshot, bool, error)
+	ListWorkers() ([]protocol.WorkerSnapshot, error)
 }
 
 type JobRepository interface {
-	Create(protocol.TestPlan) (protocol.TestJob, error)
-	Get(string) (protocol.TestJob, error)
-	Assignments(string) ([]protocol.WorkerAssignment, error)
-	Cancel(string) (protocol.TestJob, error)
-	Transition(string, string, protocol.AssignmentState) (protocol.TestJob, error)
+	CreateJob(protocol.TestPlan) (protocol.TestJob, error)
+	GetJob(string) (protocol.TestJob, error)
+	ListAssignments(string) ([]protocol.WorkerAssignment, error)
+	CancelJob(string) (protocol.TestJob, error)
+	TransitionAssignment(string, string, protocol.AssignmentState) (protocol.TestJob, error)
 }

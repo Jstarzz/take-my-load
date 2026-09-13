@@ -19,11 +19,11 @@ var (
 )
 
 type JobStore struct {
-	mu           sync.RWMutex
-	jobs         map[string]*protocol.TestJob
+	mu            sync.RWMutex
+	jobs          map[string]*protocol.TestJob
 	assignmentJob map[string]string
-	now          func() time.Time
-	scheduleLead time.Duration
+	now           func() time.Time
+	scheduleLead  time.Duration
 }
 
 func NewJobStore() *JobStore {
@@ -35,7 +35,7 @@ func NewJobStore() *JobStore {
 	}
 }
 
-func (s *JobStore) Create(plan protocol.TestPlan) (protocol.TestJob, error) {
+func (s *JobStore) CreateJob(plan protocol.TestPlan) (protocol.TestJob, error) {
 	job, err := BuildJob(plan, s.now())
 	if err != nil {
 		return protocol.TestJob{}, err
@@ -53,7 +53,7 @@ func (s *JobStore) Create(plan protocol.TestPlan) (protocol.TestJob, error) {
 	return cloneJob(job), nil
 }
 
-func (s *JobStore) Get(id string) (protocol.TestJob, error) {
+func (s *JobStore) GetJob(id string) (protocol.TestJob, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	job, ok := s.jobs[id]
@@ -63,7 +63,7 @@ func (s *JobStore) Get(id string) (protocol.TestJob, error) {
 	return cloneJob(*job), nil
 }
 
-func (s *JobStore) Assignments(workerID string) ([]protocol.WorkerAssignment, error) {
+func (s *JobStore) ListAssignments(workerID string) ([]protocol.WorkerAssignment, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := make([]protocol.WorkerAssignment, 0)
@@ -78,7 +78,7 @@ func (s *JobStore) Assignments(workerID string) ([]protocol.WorkerAssignment, er
 	return result, nil
 }
 
-func (s *JobStore) Cancel(id string) (protocol.TestJob, error) {
+func (s *JobStore) CancelJob(id string) (protocol.TestJob, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	job, ok := s.jobs[id]
@@ -91,7 +91,7 @@ func (s *JobStore) Cancel(id string) (protocol.TestJob, error) {
 	return cloneJob(*job), nil
 }
 
-func (s *JobStore) Transition(workerID, assignmentID string, next protocol.AssignmentState) (protocol.TestJob, error) {
+func (s *JobStore) TransitionAssignment(workerID, assignmentID string, next protocol.AssignmentState) (protocol.TestJob, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

@@ -42,7 +42,7 @@ func NewPlanner(registry WorkerRepository, policy *TargetPolicy) *Planner {
 }
 
 func (p *Planner) Capacity(engine string) (protocol.CapacityResponse, error) {
-	workers, err := p.registry.List()
+	workers, err := p.registry.ListWorkers()
 	if err != nil {
 		return protocol.CapacityResponse{}, fmt.Errorf("list workers: %w", err)
 	}
@@ -66,7 +66,7 @@ func (p *Planner) Plan(req protocol.TestPlanRequest) (protocol.TestPlan, error) 
 		return protocol.TestPlan{}, err
 	}
 
-	workers, err := p.registry.List()
+	workers, err := p.registry.ListWorkers()
 	if err != nil {
 		return protocol.TestPlan{}, fmt.Errorf("list workers: %w", err)
 	}

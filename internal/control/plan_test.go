@@ -76,7 +76,7 @@ func TestPlanTestRejectsMoreThanAggregateCapacity(t *testing.T) {
 
 func mustRegister(t *testing.T, registry *Registry, registration protocol.WorkerRegistration) {
 	t.Helper()
-	if _, err := registry.Register(registration); err != nil {
-		t.Fatalf("Register() error = %v", err)
+	if _, err := registry.RegisterWorker(registration); err != nil {
+		t.Fatalf("RegisterWorker() error = %v", err)
 	}
 }

@@ -14,7 +14,7 @@ func TestJobStoreSchedulesAllWorkersOnSharedStart(t *testing.T) {
 	store.now = func() time.Time { return clock }
 	store.scheduleLead = 2 * time.Second
 
-	job, err := store.Create(protocol.TestPlan{
+	job, err := store.CreateJob(protocol.TestPlan{
 		ID: "job-1", Target: "http://10.250.0.10", Engine: "blast", DurationSeconds: 30,
 		Shards: []protocol.WorkerShard{
 			{WorkerID: "a", RequestsPerSecond: 60_000},
@@ -22,7 +22,7 @@ func TestJobStoreSchedulesAllWorkersOnSharedStart(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("Create() error = %v", err)
+		t.Fatalf("CreateJob() error = %v", err)
 	}
 	if job.State != protocol.TestStatePreparing {
 		t.Fatalf("state = %s, want preparing", job.State)
@@ -30,7 +30,7 @@ func TestJobStoreSchedulesAllWorkersOnSharedStart(t *testing.T) {
 
 	a := assignmentFor(t, job, "a")
 	b := assignmentFor(t, job, "b")
-	job, err = store.Transition("a", a.ID, protocol.AssignmentStateReady)
+	job, err = store.TransitionAssignment("a", a.ID, protocol.AssignmentStateReady)
 	if err != nil {
 		t.Fatalf("first ready: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestJobStoreSchedulesAllWorkersOnSharedStart(t *testing.T) {
 		t.Fatalf("state after one ready = %s, want preparing", job.State)
 	}
 
-	job, err = store.Transition("b", b.ID, protocol.AssignmentStateReady)
+	job, err = store.TransitionAssignment("b", b.ID, protocol.AssignmentStateReady)
 	if err != nil {
 		t.Fatalf("second ready: %v", err)
 	}
@@ -52,20 +52,20 @@ func TestJobStoreSchedulesAllWorkersOnSharedStart(t *testing.T) {
 		}
 	}
 
-	if _, err := store.Transition("a", a.ID, protocol.AssignmentStateRunning); !errors.Is(err, ErrStartTimeNotReached) {
+	if _, err := store.TransitionAssignment("a", a.ID, protocol.AssignmentStateRunning); !errors.Is(err, ErrStartTimeNotReached) {
 		t.Fatalf("early start error = %v, want ErrStartTimeNotReached", err)
 	}
 	clock = wantStart
-	if _, err := store.Transition("a", a.ID, protocol.AssignmentStateRunning); err != nil {
+	if _, err := store.TransitionAssignment("a", a.ID, protocol.AssignmentStateRunning); err != nil {
 		t.Fatalf("start a: %v", err)
 	}
-	if _, err := store.Transition("b", b.ID, protocol.AssignmentStateRunning); err != nil {
+	if _, err := store.TransitionAssignment("b", b.ID, protocol.AssignmentStateRunning); err != nil {
 		t.Fatalf("start b: %v", err)
 	}
-	if _, err := store.Transition("a", a.ID, protocol.AssignmentStateCompleted); err != nil {
+	if _, err := store.TransitionAssignment("a", a.ID, protocol.AssignmentStateCompleted); err != nil {
 		t.Fatalf("complete a: %v", err)
 	}
-	job, err = store.Transition("b", b.ID, protocol.AssignmentStateCompleted)
+	job, err = store.TransitionAssignment("b", b.ID, protocol.AssignmentStateCompleted)
 	if err != nil {
 		t.Fatalf("complete b: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestJobStoreSchedulesAllWorkersOnSharedStart(t *testing.T) {
 
 func TestJobStoreFailureCancelsPeers(t *testing.T) {
 	store := NewJobStore()
-	job, err := store.Create(protocol.TestPlan{
+	job, err := store.CreateJob(protocol.TestPlan{
 		ID: "job-2", Target: "http://10.250.0.10", Engine: "blast", DurationSeconds: 10,
 		Shards: []protocol.WorkerShard{
 			{WorkerID: "a", RequestsPerSecond: 10},
@@ -84,10 +84,10 @@ func TestJobStoreFailureCancelsPeers(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("Create() error = %v", err)
+		t.Fatalf("CreateJob() error = %v", err)
 	}
 	a := assignmentFor(t, job, "a")
-	job, err = store.Transition("a", a.ID, protocol.AssignmentStateFailed)
+	job, err = store.TransitionAssignment("a", a.ID, protocol.AssignmentStateFailed)
 	if err != nil {
 		t.Fatalf("fail a: %v", err)
 	}

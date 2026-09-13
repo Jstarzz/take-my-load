@@ -24,7 +24,7 @@ func NewRegistry() *Registry {
 	}
 }
 
-func (r *Registry) Register(reg protocol.WorkerRegistration) (protocol.WorkerSnapshot, error) {
+func (r *Registry) RegisterWorker(reg protocol.WorkerRegistration) (protocol.WorkerSnapshot, error) {
 	now := r.now().UTC()
 	worker := protocol.WorkerSnapshot{
 		ID:          reg.ID,
@@ -42,7 +42,7 @@ func (r *Registry) Register(reg protocol.WorkerRegistration) (protocol.WorkerSna
 	return worker, nil
 }
 
-func (r *Registry) Heartbeat(id string, hb protocol.WorkerHeartbeat) (protocol.WorkerSnapshot, error) {
+func (r *Registry) HeartbeatWorker(id string, hb protocol.WorkerHeartbeat) (protocol.WorkerSnapshot, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -58,7 +58,7 @@ func (r *Registry) Heartbeat(id string, hb protocol.WorkerHeartbeat) (protocol.W
 	return worker, nil
 }
 
-func (r *Registry) Get(id string) (protocol.WorkerSnapshot, bool, error) {
+func (r *Registry) GetWorker(id string) (protocol.WorkerSnapshot, bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	worker, ok := r.workers[id]
@@ -69,7 +69,7 @@ func (r *Registry) Get(id string) (protocol.WorkerSnapshot, bool, error) {
 	return worker, true, nil
 }
 
-func (r *Registry) List() ([]protocol.WorkerSnapshot, error) {
+func (r *Registry) ListWorkers() ([]protocol.WorkerSnapshot, error) {
 	r.mu.RLock()
 	workers := make([]protocol.WorkerSnapshot, 0, len(r.workers))
 	for _, worker := range r.workers {

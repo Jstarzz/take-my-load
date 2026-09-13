@@ -65,7 +65,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleWorkers(w http.ResponseWriter, _ *http.Request) {
-	workers, err := s.registry.List()
+	workers, err := s.registry.ListWorkers()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list workers")
 		return
@@ -87,7 +87,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "at least one engine is required")
 		return
 	}
-	worker, err := s.registry.Register(reg)
+	worker, err := s.registry.RegisterWorker(reg)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to register worker")
 		return
@@ -101,7 +101,7 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	worker, err := s.registry.Heartbeat(r.PathValue("id"), hb)
+	worker, err := s.registry.HeartbeatWorker(r.PathValue("id"), hb)
 	if errors.Is(err, ErrWorkerNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -115,7 +115,7 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAssignments(w http.ResponseWriter, r *http.Request) {
 	workerID := r.PathValue("id")
-	_, ok, err := s.registry.Get(workerID)
+	_, ok, err := s.registry.GetWorker(workerID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read worker")
 		return
@@ -124,7 +124,7 @@ func (s *Server) handleAssignments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, ErrWorkerNotFound.Error())
 		return
 	}
-	assignments, err := s.jobs.Assignments(workerID)
+	assignments, err := s.jobs.ListAssignments(workerID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list assignments")
 		return
@@ -144,7 +144,7 @@ func (s *Server) handleAssignmentAction(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "unknown assignment action")
 		return
 	}
-	job, err := s.jobs.Transition(r.PathValue("worker_id"), r.PathValue("assignment_id"), next)
+	job, err := s.jobs.TransitionAssignment(r.PathValue("worker_id"), r.PathValue("assignment_id"), next)
 	switch {
 	case errors.Is(err, ErrAssignmentNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -199,7 +199,7 @@ func (s *Server) handleSubmitTest(w http.ResponseWriter, r *http.Request) {
 		writePlanError(w, err)
 		return
 	}
-	job, err := s.jobs.Create(plan)
+	job, err := s.jobs.CreateJob(plan)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create test job")
 		return
@@ -208,7 +208,7 @@ func (s *Server) handleSubmitTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetTest(w http.ResponseWriter, r *http.Request) {
-	job, err := s.jobs.Get(r.PathValue("id"))
+	job, err := s.jobs.GetJob(r.PathValue("id"))
 	if errors.Is(err, ErrJobNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -221,7 +221,7 @@ func (s *Server) handleGetTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCancelTest(w http.ResponseWriter, r *http.Request) {
-	job, err := s.jobs.Cancel(r.PathValue("id"))
+	job, err := s.jobs.CancelJob(r.PathValue("id"))
 	switch {
 	case errors.Is(err, ErrJobNotFound):
 		writeError(w, http.StatusNotFound, err.Error())

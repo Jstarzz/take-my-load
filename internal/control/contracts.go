@@ -15,4 +15,5 @@ type JobRepository interface {
 	ListAssignments(string) ([]protocol.WorkerAssignment, error)
 	CancelJob(string) (protocol.TestJob, error)
 	TransitionAssignment(string, string, protocol.AssignmentState) (protocol.TestJob, error)
+	CompleteAssignment(string, string, protocol.ExecutionSummary) (protocol.TestJob, error)
 }

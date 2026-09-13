@@ -105,3 +105,18 @@ func (s *JobStore) TransitionAssignment(workerID, assignmentID string, next prot
 	}
 	return cloneJob(*job), nil
 }
+
+func (s *JobStore) CompleteAssignment(workerID, assignmentID string, result protocol.ExecutionSummary) (protocol.TestJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	jobID, ok := s.assignmentJob[assignmentID]
+	if !ok {
+		return protocol.TestJob{}, ErrAssignmentNotFound
+	}
+	job := s.jobs[jobID]
+	if err := ApplyAssignmentCompletion(job, workerID, assignmentID, result, s.now()); err != nil {
+		return protocol.TestJob{}, err
+	}
+	return cloneJob(*job), nil
+}

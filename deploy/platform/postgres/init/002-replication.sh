@@ -18,6 +18,10 @@ BEGIN
 END
 $$;
 ALTER ROLE tml_replicator PASSWORD :'replication_password';
+SELECT pg_create_physical_replication_slot('tml_replica')
+WHERE NOT EXISTS (
+  SELECT 1 FROM pg_replication_slots WHERE slot_name = 'tml_replica'
+);
 SQL
 
 echo "host replication tml_replicator all scram-sha-256" >> "$PGDATA/pg_hba.conf"

@@ -11,6 +11,7 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
   done
 
   rm -rf "$PGDATA"/*
+  chown -R postgres:postgres "$PGDATA"
   export PGPASSWORD="$POSTGRES_REPLICATION_PASSWORD"
   gosu postgres pg_basebackup \
     -h postgres-primary \
@@ -20,8 +21,8 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
     -Fp \
     -Xs \
     -P \
-    -R
-  chown -R postgres:postgres "$PGDATA"
+    -R \
+    -S tml_replica
 fi
 
 exec docker-entrypoint.sh postgres -c hot_standby=on

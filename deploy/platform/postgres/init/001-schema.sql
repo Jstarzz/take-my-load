@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS test_jobs (
 CREATE TABLE IF NOT EXISTS worker_assignments (
     id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL REFERENCES test_jobs(id) ON DELETE CASCADE,
-    worker_id TEXT NOT NULL,
+    worker_id TEXT NOT NULL REFERENCES workers(id) ON DELETE RESTRICT,
     target TEXT NOT NULL,
     engine TEXT NOT NULL,
     requests_per_second BIGINT NOT NULL CHECK (requests_per_second > 0),

@@ -3,6 +3,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -12,7 +13,7 @@ import (
 )
 
 type Executor interface {
-	Run(context.Context, protocol.WorkerAssignment) error
+	Run(context.Context, protocol.WorkerAssignment) (protocol.ExecutionSummary, error)
 }
 
 type BlastExecutor struct {
@@ -30,12 +31,12 @@ func NewBlastExecutor(binary string, concurrency int) *BlastExecutor {
 	return &BlastExecutor{binary: binary, concurrency: concurrency}
 }
 
-func (e *BlastExecutor) Run(ctx context.Context, assignment protocol.WorkerAssignment) error {
+func (e *BlastExecutor) Run(ctx context.Context, assignment protocol.WorkerAssignment) (protocol.ExecutionSummary, error) {
 	if assignment.Engine != "blast" {
-		return fmt.Errorf("unsupported execution engine %q", assignment.Engine)
+		return protocol.ExecutionSummary{}, fmt.Errorf("unsupported execution engine %q", assignment.Engine)
 	}
 	if assignment.RequestsPerSecond <= 0 || assignment.DurationSeconds <= 0 {
-		return fmt.Errorf("invalid assignment rate=%d duration=%d", assignment.RequestsPerSecond, assignment.DurationSeconds)
+		return protocol.ExecutionSummary{}, fmt.Errorf("invalid assignment rate=%d duration=%d", assignment.RequestsPerSecond, assignment.DurationSeconds)
 	}
 
 	cmd := exec.CommandContext(
@@ -57,12 +58,16 @@ func (e *BlastExecutor) Run(ctx context.Context, assignment protocol.WorkerAssig
 			message = message[:4096]
 		}
 		if message == "" {
-			return fmt.Errorf("blast execution: %w", err)
+			return protocol.ExecutionSummary{}, fmt.Errorf("blast execution: %w", err)
 		}
-		return fmt.Errorf("blast execution: %w: %s", err, message)
+		return protocol.ExecutionSummary{}, fmt.Errorf("blast execution: %w: %s", err, message)
 	}
 	if strings.TrimSpace(stdout.String()) == "" {
-		return fmt.Errorf("blast execution returned no summary")
+		return protocol.ExecutionSummary{}, fmt.Errorf("blast execution returned no summary")
 	}
-	return nil
+	var summary protocol.ExecutionSummary
+	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
+		return protocol.ExecutionSummary{}, fmt.Errorf("decode blast summary: %w", err)
+	}
+	return summary, nil
 }

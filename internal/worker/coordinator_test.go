@@ -13,6 +13,7 @@ type fakeControlClient struct {
 	mu          sync.Mutex
 	assignments []protocol.WorkerAssignment
 	actions     []string
+	results     []protocol.ExecutionSummary
 }
 
 func (f *fakeControlClient) Assignments(context.Context, string) ([]protocol.WorkerAssignment, error) {
@@ -28,6 +29,14 @@ func (f *fakeControlClient) Transition(_ context.Context, _, _ string, action st
 	return protocol.TestJob{}, nil
 }
 
+func (f *fakeControlClient) Complete(_ context.Context, _, _ string, summary protocol.ExecutionSummary) (protocol.TestJob, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.actions = append(f.actions, "result")
+	f.results = append(f.results, summary)
+	return protocol.TestJob{}, nil
+}
+
 func (f *fakeControlClient) setAssignments(assignments []protocol.WorkerAssignment) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -40,20 +49,48 @@ func (f *fakeControlClient) actionSnapshot() []string {
 	return append([]string(nil), f.actions...)
 }
 
+func (f *fakeControlClient) resultSnapshot() []protocol.ExecutionSummary {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]protocol.ExecutionSummary(nil), f.results...)
+}
+
 type fakeExecutor struct {
 	started   chan protocol.WorkerAssignment
 	release   chan struct{}
 	cancelled chan struct{}
 }
 
-func (e *fakeExecutor) Run(ctx context.Context, assignment protocol.WorkerAssignment) error {
+func (e *fakeExecutor) Run(ctx context.Context, assignment protocol.WorkerAssignment) (protocol.ExecutionSummary, error) {
 	e.started <- assignment
 	select {
 	case <-e.release:
-		return nil
+		return testSummary(assignment), nil
 	case <-ctx.Done():
 		close(e.cancelled)
-		return ctx.Err()
+		return protocol.ExecutionSummary{}, ctx.Err()
+	}
+}
+
+func testSummary(assignment protocol.WorkerAssignment) protocol.ExecutionSummary {
+	return protocol.ExecutionSummary{
+		Engine:         assignment.Engine,
+		Version:        "test",
+		Target:         assignment.Target,
+		RequestedRPS:   assignment.RequestsPerSecond,
+		DurationMS:     assignment.DurationSeconds * 1000,
+		Concurrency:    1,
+		Scheduled:      1,
+		Started:        1,
+		Completed:      1,
+		ActualRPS:      1,
+		LatencySamples: 1,
+		LatencyMinUS:   10,
+		LatencyP50US:   10,
+		LatencyP95US:   10,
+		LatencyP99US:   10,
+		LatencyMaxUS:   10,
+		Status2xx:      1,
 	}
 }
 
@@ -86,7 +123,7 @@ func TestCoordinatorSimulationAdvancesSafeLifecycle(t *testing.T) {
 	}
 }
 
-func TestCoordinatorExecutionLaunchesShardOnceAndCompletes(t *testing.T) {
+func TestCoordinatorExecutionLaunchesShardOnceAndReportsResult(t *testing.T) {
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
 	past := now.Add(-time.Millisecond)
 	assignment := protocol.WorkerAssignment{
@@ -132,10 +169,17 @@ func TestCoordinatorExecutionLaunchesShardOnceAndCompletes(t *testing.T) {
 	}
 
 	close(executor.release)
-	waitForAction(t, client, "completed")
+	waitForAction(t, client, "result")
 	got := client.actionSnapshot()
-	if got[0] != "started" || got[len(got)-1] != "completed" {
+	if got[0] != "started" || got[len(got)-1] != "result" {
 		t.Fatalf("actions = %v", got)
+	}
+	results := client.resultSnapshot()
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	if results[0].RequestedRPS != assignment.RequestsPerSecond || results[0].Target != assignment.Target {
+		t.Fatalf("unexpected result = %+v", results[0])
 	}
 }
 

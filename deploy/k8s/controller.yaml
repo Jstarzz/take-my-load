@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller
+  namespace: take-my-load
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tml-controller
+  template:
+    metadata:
+      labels:
+        app: tml-controller
+    spec:
+      containers:
+        - name: controller
+          image: ghcr.io/jstarzz/take-my-load/controller:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TML_LISTEN_ADDR
+              value: :8080
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: controller
+  namespace: take-my-load
+spec:
+  selector:
+    app: tml-controller
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

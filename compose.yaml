@@ -1,0 +1,39 @@
+services:
+  controller:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        SERVICE: controller
+    environment:
+      TML_LISTEN_ADDR: :8080
+    ports:
+      - "8080:8080"
+
+  worker-1:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        SERVICE: worker
+    environment:
+      TML_CONTROLLER_URL: http://controller:8080
+      TML_WORKER_ID: worker-1
+      TML_WORKER_NAME: Local Worker 1
+      TML_WORKER_CAPACITY_RPS: "100000"
+    depends_on:
+      - controller
+
+  worker-2:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        SERVICE: worker
+    environment:
+      TML_CONTROLLER_URL: http://controller:8080
+      TML_WORKER_ID: worker-2
+      TML_WORKER_NAME: Local Worker 2
+      TML_WORKER_CAPACITY_RPS: "100000"
+    depends_on:
+      - controller

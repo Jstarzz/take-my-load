@@ -1,0 +1,12 @@
+[package]
+name = "tml-blast"
+version = "0.1.0"
+edition = "2024"
+description = "High-throughput traffic engine for Take My Load"
+publish = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

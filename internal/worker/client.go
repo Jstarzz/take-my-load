@@ -51,6 +51,15 @@ func (c *Client) Transition(ctx context.Context, workerID, assignmentID, action 
 	return job, nil
 }
 
+func (c *Client) Complete(ctx context.Context, workerID, assignmentID string, summary protocol.ExecutionSummary) (protocol.TestJob, error) {
+	path := "/api/v1/workers/" + url.PathEscape(workerID) + "/assignments/" + url.PathEscape(assignmentID) + "/result"
+	var job protocol.TestJob
+	if err := c.post(ctx, path, summary, &job); err != nil {
+		return protocol.TestJob{}, err
+	}
+	return job, nil
+}
+
 func (c *Client) get(ctx context.Context, path string, dst any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {

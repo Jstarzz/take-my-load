@@ -1,6 +1,5 @@
 use std::{
-    env,
-    process,
+    env, process,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -281,14 +280,13 @@ async fn run(config: RunConfig) -> Result<(), String> {
     Ok(())
 }
 
-async fn execute_one(
-    client: Client<HttpConnector, Empty<Bytes>>,
-    uri: Uri,
-    stats: Arc<Stats>,
-) {
+async fn execute_one(client: Client<HttpConnector, Empty<Bytes>>, uri: Uri, stats: Arc<Stats>) {
     let started = Instant::now();
     let request = match Request::get(uri)
-        .header("user-agent", concat!("tml-blast/", env!("CARGO_PKG_VERSION")))
+        .header(
+            "user-agent",
+            concat!("tml-blast/", env!("CARGO_PKG_VERSION")),
+        )
         .body(Empty::<Bytes>::new())
     {
         Ok(request) => request,
@@ -362,7 +360,8 @@ fn parse_run_config(mut args: impl Iterator<Item = String>) -> Result<RunConfig,
     if rps == 0 || rps > MAX_RPS {
         return Err(format!("--rps must be between 1 and {MAX_RPS}"));
     }
-    let duration_seconds = duration_seconds.ok_or_else(|| "--duration-seconds is required".to_string())?;
+    let duration_seconds =
+        duration_seconds.ok_or_else(|| "--duration-seconds is required".to_string())?;
     if duration_seconds == 0 || duration_seconds > 3_600 {
         return Err("--duration-seconds must be between 1 and 3600".to_string());
     }

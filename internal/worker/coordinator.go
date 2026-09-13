@@ -12,6 +12,7 @@ import (
 type ControlClient interface {
 	Assignments(context.Context, string) ([]protocol.WorkerAssignment, error)
 	Transition(context.Context, string, string, string) (protocol.TestJob, error)
+	Complete(context.Context, string, string, protocol.ExecutionSummary) (protocol.TestJob, error)
 }
 
 type Coordinator struct {
@@ -140,7 +141,8 @@ func (c *Coordinator) launch(parent context.Context, assignment protocol.WorkerA
 			c.reportAsync(fmt.Errorf("assignment %s start: %w", assignment.ID, err))
 			return
 		}
-		if err := c.executor.Run(ctx, assignment); err != nil {
+		summary, err := c.executor.Run(ctx, assignment)
+		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
@@ -151,8 +153,8 @@ func (c *Coordinator) launch(parent context.Context, assignment protocol.WorkerA
 			c.reportAsync(fmt.Errorf("assignment %s execution failed: %w", assignment.ID, err))
 			return
 		}
-		if _, err := c.client.Transition(ctx, c.workerID, assignment.ID, "completed"); err != nil {
-			c.reportAsync(fmt.Errorf("assignment %s complete: %w", assignment.ID, err))
+		if _, err := c.client.Complete(ctx, c.workerID, assignment.ID, summary); err != nil {
+			c.reportAsync(fmt.Errorf("assignment %s result completion: %w", assignment.ID, err))
 		}
 	}()
 }

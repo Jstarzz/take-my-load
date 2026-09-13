@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS test_jobs (
     id TEXT PRIMARY KEY REFERENCES test_plans(id) ON DELETE RESTRICT,
     state TEXT NOT NULL CHECK (state IN ('preparing', 'scheduled', 'running', 'completed', 'failed', 'cancelled')),
     start_at TIMESTAMPTZ,
+    snapshot JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
 );
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS worker_assignments (
     duration_seconds BIGINT NOT NULL CHECK (duration_seconds > 0),
     state TEXT NOT NULL CHECK (state IN ('pending', 'ready', 'scheduled', 'running', 'completed', 'failed', 'cancelled')),
     start_at TIMESTAMPTZ,
+    snapshot JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

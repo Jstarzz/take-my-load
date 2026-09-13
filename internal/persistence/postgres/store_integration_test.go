@@ -23,7 +23,11 @@ func TestStorePersistsDistributedJobLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		if store != nil {
+			store.Close()
+		}
+	}()
 
 	if _, err := store.pool.Exec(ctx, `TRUNCATE worker_assignments, test_jobs, test_plans, workers RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("truncate test tables: %v", err)
@@ -104,6 +108,7 @@ func TestStorePersistsDistributedJobLifecycle(t *testing.T) {
 	}
 
 	store.Close()
+	store = nil
 	reopened, err := Open(ctx, dsn)
 	if err != nil {
 		t.Fatalf("reopen store: %v", err)

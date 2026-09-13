@@ -84,7 +84,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -f deploy/docker/Dockerfile --build-arg SERVICE=controller -t take-my-load-controller:test .
-      - run: docker build -f deploy/docker/Dockerfile --build-arg SERVICE=worker -t take-my-load-worker:test .
+      - run: docker build -f deploy/docker/Dockerfile.worker -t take-my-load-worker:test .
+      - name: Verify packaged blast engine
+        run: docker run --rm --entrypoint /usr/local/bin/tml-blast take-my-load-worker:test --capabilities
       - run: docker compose config --quiet
       - name: Validate full platform compose
         run: docker compose -f compose.yaml -f deploy/platform/compose.yaml config --quiet

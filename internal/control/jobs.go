@@ -11,11 +11,11 @@ import (
 )
 
 var (
-	ErrJobNotFound        = errors.New("test job not found")
-	ErrJobAlreadyExists   = errors.New("test job already exists")
-	ErrAssignmentNotFound = errors.New("assignment not found")
-	ErrAssignmentOwner    = errors.New("assignment does not belong to worker")
-	ErrInvalidTransition  = errors.New("invalid assignment state transition")
+	ErrJobNotFound         = errors.New("test job not found")
+	ErrJobAlreadyExists    = errors.New("test job already exists")
+	ErrAssignmentNotFound  = errors.New("assignment not found")
+	ErrAssignmentOwner     = errors.New("assignment does not belong to worker")
+	ErrInvalidTransition   = errors.New("invalid assignment state transition")
 	ErrStartTimeNotReached = errors.New("scheduled start time has not been reached")
 )
 

@@ -98,6 +98,22 @@ func ApplyAssignmentTransition(job *protocol.TestJob, workerID, assignmentID str
 	return nil
 }
 
+func ApplyAssignmentCompletion(job *protocol.TestJob, workerID, assignmentID string, result protocol.ExecutionSummary, now time.Time) error {
+	assignment := findAssignment(job, assignmentID)
+	if assignment == nil {
+		return ErrAssignmentNotFound
+	}
+	if assignment.WorkerID != workerID {
+		return ErrAssignmentOwner
+	}
+	if assignment.State != protocol.AssignmentStateRunning {
+		return transitionError(assignment.State, protocol.AssignmentStateCompleted)
+	}
+	resultCopy := result
+	assignment.Result = &resultCopy
+	return ApplyAssignmentTransition(job, workerID, assignmentID, protocol.AssignmentStateCompleted, now, 0)
+}
+
 func ApplyJobCancellation(job *protocol.TestJob, now time.Time) error {
 	if jobTerminal(job.State) {
 		return fmt.Errorf("%w: job is already %s", ErrInvalidTransition, job.State)
@@ -154,6 +170,10 @@ func cloneAssignment(assignment protocol.WorkerAssignment) protocol.WorkerAssign
 	if assignment.StartAt != nil {
 		startAt := *assignment.StartAt
 		assignment.StartAt = &startAt
+	}
+	if assignment.Result != nil {
+		result := *assignment.Result
+		assignment.Result = &result
 	}
 	return assignment
 }

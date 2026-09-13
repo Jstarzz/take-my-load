@@ -16,7 +16,17 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test ./...
-      - run: test -z "$(gofmt -l .)"
+      - name: Check gofmt
+        shell: bash
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "Unformatted Go files:"
+            echo "$files"
+            echo
+            gofmt -d .
+            exit 1
+          fi
       - run: go vet ./...
 
   rust:

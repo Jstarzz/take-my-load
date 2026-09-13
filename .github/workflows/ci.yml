@@ -15,6 +15,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
+      - name: Materialize module checksums
+        run: |
+          go mod tidy
+          echo '--- GO_SUM_BEGIN ---'
+          cat go.sum
+          echo '--- GO_SUM_END ---'
       - run: go test ./...
       - name: Check gofmt
         shell: bash

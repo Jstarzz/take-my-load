@@ -7,6 +7,7 @@ services:
         SERVICE: controller
     environment:
       TML_LISTEN_ADDR: :8080
+      TML_ALLOWED_TARGETS: 10.250.0.0/24,127.0.0.1,localhost
     ports:
       - "8080:8080"
 
@@ -21,6 +22,7 @@ services:
       TML_WORKER_ID: worker-1
       TML_WORKER_NAME: Local Worker 1
       TML_WORKER_CAPACITY_RPS: "100000"
+      TML_COORDINATION_SIMULATION: "true"
     depends_on:
       - controller
 
@@ -35,5 +37,6 @@ services:
       TML_WORKER_ID: worker-2
       TML_WORKER_NAME: Local Worker 2
       TML_WORKER_CAPACITY_RPS: "100000"
+      TML_COORDINATION_SIMULATION: "true"
     depends_on:
       - controller

@@ -23,7 +23,9 @@ func main() {
 	name := getenv("TML_WORKER_NAME", id)
 	controller := getenv("TML_CONTROLLER_URL", "http://127.0.0.1:8080")
 	capacity := getenvInt64("TML_WORKER_CAPACITY_RPS", 0)
-	interval := getenvDuration("TML_HEARTBEAT_INTERVAL", 5*time.Second)
+	heartbeatInterval := getenvDuration("TML_HEARTBEAT_INTERVAL", 5*time.Second)
+	assignmentInterval := getenvDuration("TML_ASSIGNMENT_POLL_INTERVAL", 500*time.Millisecond)
+	simulation := getenvBool("TML_COORDINATION_SIMULATION", false)
 	engines := splitCSV(getenv("TML_ENGINES", "blast,k6,h2load,wrk2"))
 
 	registration := protocol.WorkerRegistration{
@@ -46,18 +48,29 @@ func main() {
 		case <-time.After(2 * time.Second):
 		}
 	}
-	log.Printf("worker registered id=%s controller=%s engines=%v", id, controller, engines)
+	log.Printf("worker registered id=%s controller=%s engines=%v simulation=%t", id, controller, engines, simulation)
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	coordinator := workerclient.NewCoordinator(client, id)
+	heartbeatTicker := time.NewTicker(heartbeatInterval)
+	assignmentTicker := time.NewTicker(assignmentInterval)
+	defer heartbeatTicker.Stop()
+	defer assignmentTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			log.Printf("worker stopping id=%s", id)
 			return
-		case <-ticker.C:
+		case <-heartbeatTicker.C:
 			if err := client.Heartbeat(ctx, id, protocol.WorkerHeartbeat{CapacityRPS: capacity}); err != nil {
 				log.Printf("heartbeat failed: %v", err)
+			}
+		case <-assignmentTicker.C:
+			if !simulation {
+				continue
+			}
+			if err := coordinator.TickSimulation(ctx); err != nil {
+				log.Printf("coordination tick failed: %v", err)
 			}
 		}
 	}
@@ -88,6 +101,18 @@ func getenvDuration(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		log.Fatalf("invalid %s=%q: %v", key, value, err)
+	}
+	return parsed
+}
+
+func getenvBool(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		log.Fatalf("invalid %s=%q: %v", key, value, err)
 	}

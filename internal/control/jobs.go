@@ -16,6 +16,7 @@ var (
 	ErrAssignmentOwner     = errors.New("assignment does not belong to worker")
 	ErrInvalidTransition   = errors.New("invalid assignment state transition")
 	ErrStartTimeNotReached = errors.New("scheduled start time has not been reached")
+	ErrInvalidResult       = errors.New("invalid assignment execution result")
 )
 
 type JobStore struct {

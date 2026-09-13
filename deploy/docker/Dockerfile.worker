@@ -1,0 +1,20 @@
+FROM rust:1.98-alpine AS blast-build
+RUN apk add --no-cache musl-dev
+WORKDIR /src/engine/blast
+COPY engine/blast/Cargo.toml ./Cargo.toml
+COPY engine/blast/src ./src
+RUN RUSTFLAGS="-C target-feature=+crt-static" cargo build --release
+
+FROM golang:1.27.1-alpine AS worker-build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd ./cmd
+COPY internal ./internal
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
+
+FROM scratch
+COPY --from=worker-build /out/worker /service
+COPY --from=blast-build /src/engine/blast/target/release/tml-blast /usr/local/bin/tml-blast
+USER 65532:65532
+ENTRYPOINT ["/service"]

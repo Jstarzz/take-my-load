@@ -1,0 +1,16 @@
+# Go
+/bin/
+*.test
+
+# Rust
+/engine/blast/target/
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

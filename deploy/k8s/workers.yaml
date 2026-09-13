@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workers
+  namespace: take-my-load
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tml-worker
+  template:
+    metadata:
+      labels:
+        app: tml-worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/jstarzz/take-my-load/worker:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TML_CONTROLLER_URL
+              value: http://controller:8080
+            - name: TML_WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TML_WORKER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TML_ENGINES
+              value: blast,k6,h2load,wrk2

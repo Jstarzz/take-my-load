@@ -1,0 +1,156 @@
+services:
+  controller:
+    environment:
+      TML_DATABASE_URL: postgres://tml:${POSTGRES_PASSWORD:-tml-dev-only}@pgbouncer:6432/tml?sslmode=disable
+    depends_on:
+      pgbouncer:
+        condition: service_started
+
+  postgres-primary:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: tml
+      POSTGRES_USER: tml
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tml-dev-only}
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-tml-repl-dev-only}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_slot_wal_keep_size=2GB
+      - -c
+      - hot_standby=on
+    volumes:
+      - postgres-primary-data:/var/lib/postgresql/data
+      - ./deploy/platform/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tml -d tml"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  postgres-replica:
+    image: postgres:18.6-alpine
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-tml-repl-dev-only}
+    entrypoint: ["/bin/sh", "/opt/tml/replica-entrypoint.sh"]
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql/data
+      - ./deploy/platform/postgres/replica-entrypoint.sh:/opt/tml/replica-entrypoint.sh:ro
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tml -d tml"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  pgbouncer:
+    image: pgbouncer/pgbouncer:1.25.2
+    environment:
+      POSTGRES_USER: tml
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tml-dev-only}
+    entrypoint: ["/bin/sh", "/opt/tml/pgbouncer-entrypoint.sh"]
+    volumes:
+      - ./deploy/platform/pgbouncer/pgbouncer.ini:/opt/tml/pgbouncer.ini:ro
+      - ./deploy/platform/pgbouncer/entrypoint.sh:/opt/tml/pgbouncer-entrypoint.sh:ro
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nats:
+    image: nats:2.14.6-alpine
+    environment:
+      NATS_USER: ${NATS_USER:-tml}
+      NATS_PASSWORD: ${NATS_PASSWORD:-tml-nats-dev-only}
+    command: ["-c", "/etc/nats/nats.conf"]
+    volumes:
+      - ./deploy/platform/nats/nats.conf:/etc/nats/nats.conf:ro
+      - nats-data:/data
+    ports:
+      - "127.0.0.1:8222:8222"
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.4.6-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-tml-redis-dev-only}
+    command:
+      - /bin/sh
+      - -c
+      - exec redis-server /usr/local/etc/redis/redis.conf --requirepass "$${REDIS_PASSWORD}"
+    volumes:
+      - ./deploy/platform/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8.2.7-alpine
+    environment:
+      CLICKHOUSE_DB: tml
+      CLICKHOUSE_USER: tml
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-tml-clickhouse-dev-only}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./deploy/platform/clickhouse/init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.148.3
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=90d
+      - -httpListenAddr=:8428
+    volumes:
+      - victoriametrics-data:/storage
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.160.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./deploy/platform/otel/config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    depends_on:
+      - victoriametrics
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-tml-dev-only}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/platform/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - victoriametrics
+    restart: unless-stopped
+
+volumes:
+  postgres-primary-data:
+  postgres-replica-data:
+  nats-data:
+  redis-data:
+  clickhouse-data:
+  victoriametrics-data:
+  grafana-data:

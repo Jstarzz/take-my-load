@@ -78,6 +78,31 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      - name: Smoke test fixed-rate HTTP execution
+        shell: bash
+        run: |
+          python3 -m http.server 18080 --bind 127.0.0.1 >/tmp/tml-http-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          sleep 1
+          summary="$(cargo run --quiet -- run --target http://127.0.0.1:18080/ --rps 100 --duration-seconds 1 --concurrency 32)"
+          echo "$summary"
+          python3 - "$summary" <<'PY'
+          import json
+          import sys
+
+          summary = json.loads(sys.argv[1])
+          assert summary["requested_rps"] == 100, summary
+          assert summary["started"] > 0, summary
+          assert summary["completed"] > 0, summary
+          assert summary["status_2xx"] > 0, summary
+          assert summary["latency_samples"] > 0, summary
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cargo-lock
+          path: engine/blast/Cargo.lock
+          if-no-files-found: error
 
   containers:
     runs-on: ubuntu-latest

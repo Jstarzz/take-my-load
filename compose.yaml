@@ -14,29 +14,29 @@ services:
   worker-1:
     build:
       context: .
-      dockerfile: deploy/docker/Dockerfile
-      args:
-        SERVICE: worker
+      dockerfile: deploy/docker/Dockerfile.worker
     environment:
       TML_CONTROLLER_URL: http://controller:8080
       TML_WORKER_ID: worker-1
       TML_WORKER_NAME: Local Worker 1
       TML_WORKER_CAPACITY_RPS: "100000"
+      TML_ENGINES: blast
       TML_COORDINATION_SIMULATION: "true"
+      TML_EXECUTION_ENABLED: "false"
     depends_on:
       - controller
 
   worker-2:
     build:
       context: .
-      dockerfile: deploy/docker/Dockerfile
-      args:
-        SERVICE: worker
+      dockerfile: deploy/docker/Dockerfile.worker
     environment:
       TML_CONTROLLER_URL: http://controller:8080
       TML_WORKER_ID: worker-2
       TML_WORKER_NAME: Local Worker 2
       TML_WORKER_CAPACITY_RPS: "100000"
+      TML_ENGINES: blast
       TML_COORDINATION_SIMULATION: "true"
+      TML_EXECUTION_ENABLED: "false"
     depends_on:
       - controller

@@ -15,13 +15,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: false
-      - name: Materialize module checksums
+      - name: Verify module graph
         run: |
           go mod tidy
-          echo '--- GO_SUM_BEGIN ---'
-          cat go.sum
-          echo '--- GO_SUM_END ---'
+          git diff --exit-code -- go.mod go.sum
       - run: go test ./...
       - name: Check gofmt
         shell: bash
@@ -35,6 +32,38 @@ jobs:
             exit 1
           fi
       - run: go vet ./...
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_DB: tml
+          POSTGRES_USER: tml
+          POSTGRES_PASSWORD: tml-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tml -d tml"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Apply control-plane schema
+        shell: bash
+        run: |
+          container_id="$(docker ps --filter ancestor=postgres:18.6-alpine --format '{{.ID}}' | head -n1)"
+          test -n "$container_id"
+          docker exec -i "$container_id" psql -v ON_ERROR_STOP=1 -U tml -d tml < deploy/platform/postgres/init/001-schema.sql
+      - name: Run PostgreSQL integration tests
+        env:
+          TML_TEST_DATABASE_URL: postgres://tml:tml-test@127.0.0.1:5432/tml?sslmode=disable
+        run: go test -tags=integration ./internal/persistence/postgres -count=1 -v
 
   rust:
     runs-on: ubuntu-latest

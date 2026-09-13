@@ -1,6 +1,6 @@
 # Control-plane API
 
-The foundation API is deliberately small. It exposes worker discovery and **planning**, but does not yet remotely execute traffic.
+The control plane exposes worker discovery, safe test planning, and a distributed job/assignment state machine. Traffic execution is not remotely enabled yet.
 
 ## Environment
 
@@ -33,17 +33,9 @@ Workers keep themselves live with `POST /api/v1/workers/{id}/heartbeat`.
 
 `GET /api/v1/capacity?engine=blast`
 
-```json
-{
-  "engine": "blast",
-  "workers": 2,
-  "available_rps": 200000
-}
-```
-
 Capacity is advertised worker capacity, not a benchmark claim. Later milestones will calibrate and age these values.
 
-## Plan a test
+## Preview a plan
 
 `POST /api/v1/tests/plan`
 
@@ -59,23 +51,36 @@ Capacity is advertised worker capacity, not a benchmark claim. Later milestones 
 
 The controller validates the target against the allowlist, checks the global planning ceiling, filters workers by engine support, and shards the requested rate proportionally to advertised worker capacity.
 
-Example response:
+Current hard planning limits are 1,000,000 RPS and 3,600 seconds. Those values are ceilings for constructing a plan, not permission to send traffic.
 
-```json
-{
-  "id": "38a10f4528d46bc1",
-  "name": "health endpoint 100k",
-  "target": "http://10.250.0.10:8080/healthz",
-  "engine": "blast",
-  "requests_per_second": 100000,
-  "duration_seconds": 30,
-  "available_rps": 200000,
-  "shards": [
-    {"worker_id": "worker-a", "requests_per_second": 50000},
-    {"worker_id": "worker-b", "requests_per_second": 50000}
-  ],
-  "created_at": "2026-09-12T20:00:00Z"
-}
+## Submit a distributed job
+
+`POST /api/v1/tests` accepts the same body as the planning endpoint. It creates a job in `preparing` state and one assignment per selected worker.
+
+Workers discover their work through:
+
+`GET /api/v1/workers/{worker_id}/assignments`
+
+Each assignment begins in `pending`. Workers acknowledge preparation with:
+
+`POST /api/v1/workers/{worker_id}/assignments/{assignment_id}/ready`
+
+When every worker is ready, the controller atomically changes all assignments to `scheduled` and gives them the **same `start_at` timestamp**. This is the basis for synchronized distributed spikes and constant-rate tests.
+
+At or after `start_at`, workers report:
+
+```text
+POST .../{assignment_id}/started
+POST .../{assignment_id}/completed
 ```
 
-Current hard planning limits are 1,000,000 RPS and 3,600 seconds. Execution will add stricter per-project/operator policy rather than treating those values as permission to send traffic.
+A worker may report `failed` from any non-terminal state. Failure marks the job failed and cancels peer assignments so a partial distributed test does not continue silently.
+
+## Read and cancel jobs
+
+```text
+GET  /api/v1/tests/{id}
+POST /api/v1/tests/{id}/cancel
+```
+
+This state is currently in memory. PostgreSQL persistence and NATS-based delivery replace the in-memory transport in the durable-control-plane milestone while preserving these lifecycle semantics.

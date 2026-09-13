@@ -12,12 +12,13 @@
 
 ## M1 — Executable test model
 
-- [ ] test/job state machine
-- [ ] target allowlist and policy evaluator
-- [ ] immutable execution-plan schema
-- [ ] engine capability discovery
-- [ ] controller-to-worker command channel
-- [ ] synchronized prepare/start/stop
+- [x] target allowlist and policy evaluator
+- [x] immutable capacity-aware execution-plan schema
+- [x] job and assignment state machine
+- [x] synchronized prepare/start lifecycle
+- [x] failure/cancellation propagation
+- [ ] engine capability discovery from actual binaries
+- [ ] controller-to-worker durable command channel
 - [ ] first safe HTTP execution path
 - [ ] bounded local histogram/counter aggregation
 

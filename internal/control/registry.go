@@ -58,6 +58,17 @@ func (r *Registry) Heartbeat(id string, hb protocol.WorkerHeartbeat) (protocol.W
 	return worker, nil
 }
 
+func (r *Registry) Get(id string) (protocol.WorkerSnapshot, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	worker, ok := r.workers[id]
+	if !ok {
+		return protocol.WorkerSnapshot{}, false
+	}
+	worker.Engines = append([]string(nil), worker.Engines...)
+	return worker, true
+}
+
 func (r *Registry) List() []protocol.WorkerSnapshot {
 	r.mu.RLock()
 	workers := make([]protocol.WorkerSnapshot, 0, len(r.workers))

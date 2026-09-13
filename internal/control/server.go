@@ -1,29 +1,20 @@
 package control
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/Jstarzz/take-my-load/internal/protocol"
 )
 
-const (
-	maxPlannedRPS      int64 = 1_000_000
-	maxDurationSeconds int64 = 3_600
-)
-
 type Server struct {
-	registry  *Registry
-	policy    *TargetPolicy
-	scheduler Scheduler
-	version   string
-	mux       *http.ServeMux
-	now       func() time.Time
+	registry *Registry
+	planner  *Planner
+	jobs     *JobStore
+	version  string
+	mux      *http.ServeMux
 }
 
 func NewServer(registry *Registry, version string) *Server {
@@ -34,10 +25,10 @@ func NewServer(registry *Registry, version string) *Server {
 func NewServerWithPolicy(registry *Registry, version string, policy *TargetPolicy) *Server {
 	s := &Server{
 		registry: registry,
-		policy:   policy,
+		planner:  NewPlanner(registry, policy),
+		jobs:     NewJobStore(),
 		version:  version,
 		mux:      http.NewServeMux(),
-		now:      time.Now,
 	}
 	s.routes()
 	return s
@@ -51,9 +42,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/info", s.handleInfo)
 	s.mux.HandleFunc("GET /api/v1/workers", s.handleWorkers)
 	s.mux.HandleFunc("POST /api/v1/workers/register", s.handleRegister)
-	s.mux.HandleFunc("POST /api/v1/workers/", s.handleWorkerAction)
+	s.mux.HandleFunc("POST /api/v1/workers/{id}/heartbeat", s.handleHeartbeat)
+	s.mux.HandleFunc("GET /api/v1/workers/{id}/assignments", s.handleAssignments)
+	s.mux.HandleFunc("POST /api/v1/workers/{worker_id}/assignments/{assignment_id}/{action}", s.handleAssignmentAction)
 	s.mux.HandleFunc("GET /api/v1/capacity", s.handleCapacity)
 	s.mux.HandleFunc("POST /api/v1/tests/plan", s.handlePlanTest)
+	s.mux.HandleFunc("POST /api/v1/tests", s.handleSubmitTest)
+	s.mux.HandleFunc("GET /api/v1/tests/{id}", s.handleGetTest)
+	s.mux.HandleFunc("POST /api/v1/tests/{id}/cancel", s.handleCancelTest)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -85,20 +81,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, s.registry.Register(reg))
 }
 
-func (s *Server) handleWorkerAction(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/workers/")
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] != "heartbeat" {
-		writeError(w, http.StatusNotFound, "route not found")
-		return
-	}
-
+func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	var hb protocol.WorkerHeartbeat
 	if err := decodeJSON(r, &hb); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	worker, err := s.registry.Heartbeat(parts[0], hb)
+	worker, err := s.registry.Heartbeat(r.PathValue("id"), hb)
 	if errors.Is(err, ErrWorkerNotFound) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -110,78 +99,138 @@ func (s *Server) handleWorkerAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, worker)
 }
 
+func (s *Server) handleAssignments(w http.ResponseWriter, r *http.Request) {
+	workerID := r.PathValue("id")
+	if _, ok := s.registry.Get(workerID); !ok {
+		writeError(w, http.StatusNotFound, ErrWorkerNotFound.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.jobs.Assignments(workerID))
+}
+
+func (s *Server) handleAssignmentAction(w http.ResponseWriter, r *http.Request) {
+	states := map[string]protocol.AssignmentState{
+		"ready":     protocol.AssignmentStateReady,
+		"started":   protocol.AssignmentStateRunning,
+		"completed": protocol.AssignmentStateCompleted,
+		"failed":    protocol.AssignmentStateFailed,
+	}
+	next, ok := states[r.PathValue("action")]
+	if !ok {
+		writeError(w, http.StatusNotFound, "unknown assignment action")
+		return
+	}
+	job, err := s.jobs.Transition(r.PathValue("worker_id"), r.PathValue("assignment_id"), next)
+	switch {
+	case errors.Is(err, ErrAssignmentNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	case errors.Is(err, ErrAssignmentOwner):
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	case errors.Is(err, ErrInvalidTransition), errors.Is(err, ErrStartTimeNotReached):
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, "assignment transition failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
 func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	engine := strings.TrimSpace(r.URL.Query().Get("engine"))
 	if engine == "" {
 		writeError(w, http.StatusBadRequest, "engine query parameter is required")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.scheduler.Capacity(s.registry.List(), engine))
+	writeJSON(w, http.StatusOK, s.planner.Capacity(engine))
 }
 
 func (s *Server) handlePlanTest(w http.ResponseWriter, r *http.Request) {
-	var req protocol.TestPlanRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	req, ok := decodePlanRequest(w, r)
+	if !ok {
 		return
 	}
-	req.Target = strings.TrimSpace(req.Target)
-	req.Engine = strings.TrimSpace(req.Engine)
-	if req.Target == "" || req.Engine == "" {
-		writeError(w, http.StatusBadRequest, "target and engine are required")
-		return
-	}
-	if req.RequestsPerSecond <= 0 || req.RequestsPerSecond > maxPlannedRPS {
-		writeError(w, http.StatusBadRequest, "requests_per_second must be between 1 and 1000000")
-		return
-	}
-	if req.DurationSeconds <= 0 || req.DurationSeconds > maxDurationSeconds {
-		writeError(w, http.StatusBadRequest, "duration_seconds must be between 1 and 3600")
-		return
-	}
-	if err := s.policy.Authorize(req.Target); err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
-		return
-	}
-
-	shards, capacity, err := s.scheduler.Shard(s.registry.List(), req.Engine, req.RequestsPerSecond)
-	if errors.Is(err, ErrInsufficientCapacity) {
-		writeJSON(w, http.StatusConflict, map[string]any{
-			"error":         err.Error(),
-			"available_rps": capacity,
-		})
-		return
-	}
+	plan, err := s.planner.Plan(req)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build execution plan")
+		writePlanError(w, err)
 		return
-	}
-
-	id, err := newPlanID()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create plan id")
-		return
-	}
-	plan := protocol.TestPlan{
-		ID:                id,
-		Name:              strings.TrimSpace(req.Name),
-		Target:            req.Target,
-		Engine:            req.Engine,
-		RequestsPerSecond: req.RequestsPerSecond,
-		DurationSeconds:   req.DurationSeconds,
-		AvailableRPS:      capacity,
-		Shards:            shards,
-		CreatedAt:         s.now().UTC(),
 	}
 	writeJSON(w, http.StatusCreated, plan)
 }
 
-func newPlanID() (string, error) {
-	var value [8]byte
-	if _, err := rand.Read(value[:]); err != nil {
-		return "", err
+func (s *Server) handleSubmitTest(w http.ResponseWriter, r *http.Request) {
+	req, ok := decodePlanRequest(w, r)
+	if !ok {
+		return
 	}
-	return hex.EncodeToString(value[:]), nil
+	plan, err := s.planner.Plan(req)
+	if err != nil {
+		writePlanError(w, err)
+		return
+	}
+	job, err := s.jobs.Create(plan)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create test job")
+		return
+	}
+	writeJSON(w, http.StatusCreated, job)
+}
+
+func (s *Server) handleGetTest(w http.ResponseWriter, r *http.Request) {
+	job, err := s.jobs.Get(r.PathValue("id"))
+	if errors.Is(err, ErrJobNotFound) {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read test job")
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
+func (s *Server) handleCancelTest(w http.ResponseWriter, r *http.Request) {
+	job, err := s.jobs.Cancel(r.PathValue("id"))
+	switch {
+	case errors.Is(err, ErrJobNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	case errors.Is(err, ErrInvalidTransition):
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, "failed to cancel test job")
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
+func decodePlanRequest(w http.ResponseWriter, r *http.Request) (protocol.TestPlanRequest, bool) {
+	var req protocol.TestPlanRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return protocol.TestPlanRequest{}, false
+	}
+	return req, true
+}
+
+func writePlanError(w http.ResponseWriter, err error) {
+	var capacityErr *CapacityError
+	switch {
+	case errors.Is(err, ErrInvalidPlan):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrTargetNotAllowed):
+		writeError(w, http.StatusForbidden, err.Error())
+	case errors.As(err, &capacityErr):
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":         ErrInsufficientCapacity.Error(),
+			"available_rps": capacityErr.AvailableRPS,
+		})
+	default:
+		writeError(w, http.StatusInternalServerError, "failed to build execution plan")
+	}
 }
 
 func decodeJSON(r *http.Request, dst any) error {

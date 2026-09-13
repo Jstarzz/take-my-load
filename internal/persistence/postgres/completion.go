@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -42,5 +41,3 @@ func (s *Store) CompleteAssignment(workerID, assignmentID string, result protoco
 	}
 	return job, nil
 }
-
-var _ context.Context

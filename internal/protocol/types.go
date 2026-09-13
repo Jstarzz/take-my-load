@@ -71,16 +71,45 @@ const (
 	AssignmentStateCancelled AssignmentState = "cancelled"
 )
 
+type ExecutionSummary struct {
+	Engine          string  `json:"engine"`
+	Version         string  `json:"version"`
+	Target          string  `json:"target"`
+	RequestedRPS    int64   `json:"requested_rps"`
+	DurationMS      int64   `json:"duration_ms"`
+	Concurrency     int64   `json:"concurrency"`
+	Scheduled       int64   `json:"scheduled"`
+	Started         int64   `json:"started"`
+	Completed       int64   `json:"completed"`
+	Failed          int64   `json:"failed"`
+	Backpressured   int64   `json:"backpressured"`
+	BytesReceived   int64   `json:"bytes_received"`
+	ActualRPS       float64 `json:"actual_rps"`
+	LatencySamples  int64   `json:"latency_samples"`
+	LatencyMinUS    int64   `json:"latency_min_us"`
+	LatencyP50US    int64   `json:"latency_p50_us"`
+	LatencyP95US    int64   `json:"latency_p95_us"`
+	LatencyP99US    int64   `json:"latency_p99_us"`
+	LatencyMaxUS    int64   `json:"latency_max_us"`
+	Status1xx       int64   `json:"status_1xx"`
+	Status2xx       int64   `json:"status_2xx"`
+	Status3xx       int64   `json:"status_3xx"`
+	Status4xx       int64   `json:"status_4xx"`
+	Status5xx       int64   `json:"status_5xx"`
+	StatusOther     int64   `json:"status_other"`
+}
+
 type WorkerAssignment struct {
-	ID                string          `json:"id"`
-	JobID             string          `json:"job_id"`
-	WorkerID          string          `json:"worker_id"`
-	Target            string          `json:"target"`
-	Engine            string          `json:"engine"`
-	RequestsPerSecond int64           `json:"requests_per_second"`
-	DurationSeconds   int64           `json:"duration_seconds"`
-	State             AssignmentState `json:"state"`
-	StartAt           *time.Time      `json:"start_at,omitempty"`
+	ID                string            `json:"id"`
+	JobID             string            `json:"job_id"`
+	WorkerID          string            `json:"worker_id"`
+	Target            string            `json:"target"`
+	Engine            string            `json:"engine"`
+	RequestsPerSecond int64             `json:"requests_per_second"`
+	DurationSeconds   int64             `json:"duration_seconds"`
+	State             AssignmentState   `json:"state"`
+	StartAt           *time.Time        `json:"start_at,omitempty"`
+	Result            *ExecutionSummary `json:"result,omitempty"`
 }
 
 type TestJob struct {

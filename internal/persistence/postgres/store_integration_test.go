@@ -96,12 +96,38 @@ func TestStorePersistsDistributedJobLifecycle(t *testing.T) {
 	if _, err := store.TransitionAssignment("worker-b", assignmentsB[0].ID, protocol.AssignmentStateRunning); err != nil {
 		t.Fatalf("worker-b running: %v", err)
 	}
-	if _, err := store.TransitionAssignment("worker-a", assignmentsA[0].ID, protocol.AssignmentStateCompleted); err != nil {
-		t.Fatalf("worker-a completed: %v", err)
+
+	summary := func(worker string) protocol.ExecutionSummary {
+		return protocol.ExecutionSummary{
+			Engine:         "blast",
+			Version:        "integration",
+			Target:         plan.Target,
+			RequestedRPS:   50_000,
+			DurationMS:     30_000,
+			Concurrency:    4_096,
+			Scheduled:      1_500_000,
+			Started:        1_499_000,
+			Completed:      1_498_900,
+			Failed:         100,
+			Backpressured:  1_000,
+			BytesReceived:  149_890_000,
+			ActualRPS:      49_963.33,
+			LatencySamples: 1_499_000,
+			LatencyMinUS:   120,
+			LatencyP50US:   350,
+			LatencyP95US:   900,
+			LatencyP99US:   1_500,
+			LatencyMaxUS:   12_000,
+			Status2xx:      1_498_900,
+			Status5xx:      100,
+		}
 	}
-	job, err = store.TransitionAssignment("worker-b", assignmentsB[0].ID, protocol.AssignmentStateCompleted)
+	if _, err := store.CompleteAssignment("worker-a", assignmentsA[0].ID, summary("worker-a")); err != nil {
+		t.Fatalf("worker-a completed with result: %v", err)
+	}
+	job, err = store.CompleteAssignment("worker-b", assignmentsB[0].ID, summary("worker-b"))
 	if err != nil {
-		t.Fatalf("worker-b completed: %v", err)
+		t.Fatalf("worker-b completed with result: %v", err)
 	}
 	if job.State != protocol.TestStateCompleted {
 		t.Fatalf("final state=%s, want completed", job.State)
@@ -120,5 +146,13 @@ func TestStorePersistsDistributedJobLifecycle(t *testing.T) {
 	}
 	if persisted.State != protocol.TestStateCompleted || len(persisted.Assignments) != 2 {
 		t.Fatalf("persisted state=%s assignments=%d", persisted.State, len(persisted.Assignments))
+	}
+	for _, assignment := range persisted.Assignments {
+		if assignment.Result == nil {
+			t.Fatalf("assignment %s lost execution result", assignment.ID)
+		}
+		if assignment.Result.Engine != "blast" || assignment.Result.RequestedRPS != 50_000 {
+			t.Fatalf("assignment %s unexpected persisted result: %+v", assignment.ID, assignment.Result)
+		}
 	}
 }

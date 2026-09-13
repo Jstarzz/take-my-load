@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Jstarzz/take-my-load/internal/protocol"
 )
@@ -71,6 +72,41 @@ func TestPlanTestRejectsMoreThanAggregateCapacity(t *testing.T) {
 	server.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d: %s", res.Code, http.StatusConflict, res.Body.String())
+	}
+}
+
+func TestPlannerExcludesWorkersPastHeartbeatLease(t *testing.T) {
+	clock := time.Date(2026, time.September, 13, 12, 0, 0, 0, time.UTC)
+	registry := NewRegistry()
+	registry.now = func() time.Time { return clock }
+	mustRegister(t, registry, protocol.WorkerRegistration{ID: "live", Name: "Live", CapacityRPS: 80_000, Engines: []string{"blast"}})
+	mustRegister(t, registry, protocol.WorkerRegistration{ID: "stale", Name: "Stale", CapacityRPS: 100_000, Engines: []string{"blast"}})
+
+	policy, _ := ParseTargetPolicy("10.250.0.0/24")
+	planner := NewPlanner(registry, policy)
+	planner.now = func() time.Time { return clock }
+	planner.workerTTL = 20 * time.Second
+
+	capacity, err := planner.Capacity("blast")
+	if err != nil {
+		t.Fatalf("Capacity() error = %v", err)
+	}
+	if capacity.AvailableRPS != 180_000 {
+		t.Fatalf("initial capacity = %d, want 180000", capacity.AvailableRPS)
+	}
+
+	clock = clock.Add(15 * time.Second)
+	if _, err := registry.HeartbeatWorker("live", protocol.WorkerHeartbeat{}); err != nil {
+		t.Fatalf("HeartbeatWorker() error = %v", err)
+	}
+	clock = clock.Add(10 * time.Second)
+
+	capacity, err = planner.Capacity("blast")
+	if err != nil {
+		t.Fatalf("Capacity() after expiry error = %v", err)
+	}
+	if capacity.Workers != 1 || capacity.AvailableRPS != 80_000 {
+		t.Fatalf("capacity after expiry = %+v, want one 80000-rps worker", capacity)
 	}
 }
 

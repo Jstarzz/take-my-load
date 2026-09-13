@@ -1,22 +1,44 @@
 package control
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Jstarzz/take-my-load/internal/protocol"
 )
 
+const (
+	maxPlannedRPS      int64 = 1_000_000
+	maxDurationSeconds int64 = 3_600
+)
+
 type Server struct {
-	registry *Registry
-	version  string
-	mux      *http.ServeMux
+	registry  *Registry
+	policy    *TargetPolicy
+	scheduler Scheduler
+	version   string
+	mux       *http.ServeMux
+	now       func() time.Time
 }
 
 func NewServer(registry *Registry, version string) *Server {
-	s := &Server{registry: registry, version: version, mux: http.NewServeMux()}
+	policy, _ := ParseTargetPolicy("")
+	return NewServerWithPolicy(registry, version, policy)
+}
+
+func NewServerWithPolicy(registry *Registry, version string, policy *TargetPolicy) *Server {
+	s := &Server{
+		registry: registry,
+		policy: policy,
+		version: version,
+		mux: http.NewServeMux(),
+		now: time.Now,
+	}
 	s.routes()
 	return s
 }
@@ -30,6 +52,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/workers", s.handleWorkers)
 	s.mux.HandleFunc("POST /api/v1/workers/register", s.handleRegister)
 	s.mux.HandleFunc("POST /api/v1/workers/", s.handleWorkerAction)
+	s.mux.HandleFunc("GET /api/v1/capacity", s.handleCapacity)
+	s.mux.HandleFunc("POST /api/v1/tests/plan", s.handlePlanTest)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -84,6 +108,80 @@ func (s *Server) handleWorkerAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, worker)
+}
+
+func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
+	engine := strings.TrimSpace(r.URL.Query().Get("engine"))
+	if engine == "" {
+		writeError(w, http.StatusBadRequest, "engine query parameter is required")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.scheduler.Capacity(s.registry.List(), engine))
+}
+
+func (s *Server) handlePlanTest(w http.ResponseWriter, r *http.Request) {
+	var req protocol.TestPlanRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	req.Target = strings.TrimSpace(req.Target)
+	req.Engine = strings.TrimSpace(req.Engine)
+	if req.Target == "" || req.Engine == "" {
+		writeError(w, http.StatusBadRequest, "target and engine are required")
+		return
+	}
+	if req.RequestsPerSecond <= 0 || req.RequestsPerSecond > maxPlannedRPS {
+		writeError(w, http.StatusBadRequest, "requests_per_second must be between 1 and 1000000")
+		return
+	}
+	if req.DurationSeconds <= 0 || req.DurationSeconds > maxDurationSeconds {
+		writeError(w, http.StatusBadRequest, "duration_seconds must be between 1 and 3600")
+		return
+	}
+	if err := s.policy.Authorize(req.Target); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
+	shards, capacity, err := s.scheduler.Shard(s.registry.List(), req.Engine, req.RequestsPerSecond)
+	if errors.Is(err, ErrInsufficientCapacity) {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":         err.Error(),
+			"available_rps": capacity,
+		})
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build execution plan")
+		return
+	}
+
+	id, err := newPlanID()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create plan id")
+		return
+	}
+	plan := protocol.TestPlan{
+		ID:                id,
+		Name:              strings.TrimSpace(req.Name),
+		Target:            req.Target,
+		Engine:            req.Engine,
+		RequestsPerSecond: req.RequestsPerSecond,
+		DurationSeconds:   req.DurationSeconds,
+		AvailableRPS:      capacity,
+		Shards:            shards,
+		CreatedAt:         s.now().UTC(),
+	}
+	writeJSON(w, http.StatusCreated, plan)
+}
+
+func newPlanID() (string, error) {
+	var value [8]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(value[:]), nil
 }
 
 func decodeJSON(r *http.Request, dst any) error {

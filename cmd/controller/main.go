@@ -13,8 +13,12 @@ var version = "dev"
 
 func main() {
 	addr := getenv("TML_LISTEN_ADDR", ":8080")
+	policy, err := control.ParseTargetPolicy(os.Getenv("TML_ALLOWED_TARGETS"))
+	if err != nil {
+		log.Fatalf("invalid TML_ALLOWED_TARGETS: %v", err)
+	}
 	registry := control.NewRegistry()
-	server := control.NewServer(registry, version)
+	server := control.NewServerWithPolicy(registry, version, policy)
 
 	httpServer := &http.Server{
 		Addr:              addr,

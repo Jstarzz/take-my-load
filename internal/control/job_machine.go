@@ -109,9 +109,58 @@ func ApplyAssignmentCompletion(job *protocol.TestJob, workerID, assignmentID str
 	if assignment.State != protocol.AssignmentStateRunning {
 		return transitionError(assignment.State, protocol.AssignmentStateCompleted)
 	}
+	if err := validateExecutionSummary(*assignment, result); err != nil {
+		return err
+	}
 	resultCopy := result
 	assignment.Result = &resultCopy
 	return ApplyAssignmentTransition(job, workerID, assignmentID, protocol.AssignmentStateCompleted, now, 0)
+}
+
+func validateExecutionSummary(assignment protocol.WorkerAssignment, result protocol.ExecutionSummary) error {
+	if result.Engine != assignment.Engine {
+		return fmt.Errorf("%w: engine %q does not match %q", ErrInvalidResult, result.Engine, assignment.Engine)
+	}
+	if result.Target != assignment.Target {
+		return fmt.Errorf("%w: target does not match assignment", ErrInvalidResult)
+	}
+	if result.RequestedRPS != assignment.RequestsPerSecond {
+		return fmt.Errorf("%w: requested_rps %d does not match %d", ErrInvalidResult, result.RequestedRPS, assignment.RequestsPerSecond)
+	}
+	values := []int64{
+		result.DurationMS,
+		result.Concurrency,
+		result.Scheduled,
+		result.Started,
+		result.Completed,
+		result.Failed,
+		result.Backpressured,
+		result.BytesReceived,
+		result.LatencySamples,
+		result.LatencyMinUS,
+		result.LatencyP50US,
+		result.LatencyP95US,
+		result.LatencyP99US,
+		result.LatencyMaxUS,
+		result.Status1xx,
+		result.Status2xx,
+		result.Status3xx,
+		result.Status4xx,
+		result.Status5xx,
+		result.StatusOther,
+	}
+	for _, value := range values {
+		if value < 0 {
+			return fmt.Errorf("%w: counters cannot be negative", ErrInvalidResult)
+		}
+	}
+	if result.DurationMS == 0 || result.Concurrency == 0 || result.ActualRPS < 0 {
+		return fmt.Errorf("%w: duration, concurrency and actual_rps must be positive/non-negative", ErrInvalidResult)
+	}
+	if result.Started > result.Scheduled || result.Completed+result.Failed > result.Started {
+		return fmt.Errorf("%w: inconsistent request counters", ErrInvalidResult)
+	}
+	return nil
 }
 
 func ApplyJobCancellation(job *protocol.TestJob, now time.Time) error {
